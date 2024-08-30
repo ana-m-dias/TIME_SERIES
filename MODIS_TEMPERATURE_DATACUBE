@@ -1,0 +1,55 @@
+//var region = 'upload a shapefile in assets and then inport in this code window'
+// MODIS data
+var modis = ee.ImageCollection('MODIS/061/MOD11A1') // Dataset of interest
+              .select('LST_Day_1km') // Band os interest
+              .filterBounds(region) // Your Shapefile
+              .filterDate('2002-01-01', '2023-12-31'); // Your date
+
+// Kelvin to Celsius
+var toCelsius = function(image) {
+  return image.multiply(0.02) // Reescaling MODIS IMAGE
+              .subtract(273.15) // Transforming Kelvin to Celsius Degree
+              .copyProperties(image, image.propertyNames());
+};
+
+var modisCelsius = modis.map(toCelsius); // Applying the function above to the imageCollection
+
+// Mensal Mean - Temperature
+var monthlyMeans = ee.ImageCollection.fromImages(
+  ee.List.sequence(2002, 2023).map(function(year) {
+    return ee.List.sequence(1, 12).map(function(month) {
+      var date = ee.Date.fromYMD(year, month, 1);
+      var monthlyCollection = modisCelsius.filter(ee.Filter.calendarRange(year, year, 'year'))
+                                          .filter(ee.Filter.calendarRange(month, month, 'month'));
+      var monthlyMean = monthlyCollection.mean()
+                                         .set('month', month)
+                                         .set('year', year)
+                                         .set('system:time_start', date.millis());
+      return monthlyMean.clip(region).rename('LST_Mean_Celsius');
+    });
+  }).flatten()
+);
+
+// h
+
+// Image to table 
+var monthlyMeanTable = monthlyMeans.map(function(image) {
+  var stats = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: region,
+    scale: 1000,  // Ajuste conforme necessário
+    bestEffort: true
+  });
+  
+  return ee.Feature(null, stats)
+           .set('month', image.get('month'))
+           .set('year', image.get('year'))
+           .set('system:time_start', image.get('system:time_start'));
+});
+
+// Exporting the data cube to Drive
+Export.table.toDrive({
+  collection: monthlyMeanTable,
+  description: 'MODIS_Temperature_Monthly_Mean_Celsius_2002_2023',
+  fileFormat: 'CSV'
+});
