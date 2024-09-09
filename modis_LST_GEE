@@ -1,0 +1,38 @@
+// Created By Ana Dias - 2024
+// Boundary box -> Create a box that encompasses the entire shapefile
+var limite = shapefile.geometry().bounds();
+
+// Function to rescale the Digital Number and convert from Kelvin to Celsius
+var K2C = function(image) {
+  var calcularC = image.select('LST_Day_1km').multiply(0.02).subtract(273.15).rename('C');
+  return image.addBands(calcularC);
+};
+
+// Create the data cube
+var dataset09 = ee.ImageCollection('MODIS/061/MOD11A1') // Use MODIS LST product
+  .filterDate('2009-01-01', '2009-12-31') // Filter by date
+  .filterBounds(shapefile) // Filter by shapefile geometry
+  .map(K2C); // Apply the K2C function
+
+var dataset09_celsius = dataset09.select('C'); // Work with Celsius band
+
+var iMean09 = dataset09_celsius.reduce(ee.Reducer.mean()); // Reduce by mean
+
+var All09 = iMean09.clip(shapefile); // Clip the image by the shapefile´s limit
+
+var reducedmedia09 = All09.reduceRegions({
+  collection: shapefile,
+  reducer: ee.Reducer.mean(), 
+  scale: 1000 // MODIS Spatial Resolution
+}).filter(ee.Filter.notNull(['mean'])); // Filter out empty results
+
+print(reducedmedia09); // Print the reduced mean results for the whole area
+
+// Export the raster to Drive
+Export.image.toDrive({
+  image: All09,
+  description: 'LST_MODIS_YEAR', // Change year to the year of interest
+  region: shapefile.geometry().bounds(), // Use the bounding box of the shapefile
+  scale: 1000, // MODIS Spatial resolution
+  crs: 'EPSG:4326' 
+});
