@@ -1,0 +1,55 @@
+// 1 - calcular a umidade relativa
+
+var bbx = table.geometry().bounds(); //criar um quadrado no entorno da geometria inserida, nesse caso um SHP importado como table
+
+// transformar em fahrenheit
+
+var calcularTempF = function(image){
+  var calcularF = image.select('temperature_2m').subtract(273).multiply(1.8).add(32).rename('F');
+  return image.addBands(calcularF);
+};
+
+// transformar em Celsius
+
+var calcularTempC= function(image){
+  var calcularC = image.select('temperature_2m').subtract(273.15).rename('temp');
+  return image.addBands(calcularC);
+}; 
+
+// Criando dataset mensal com a banda da temperatura em fahrenheit
+var tf = ee.ImageCollection("ECMWF/ERA5_LAND/MONTHLY_AGGR")
+            .map(calcularTempF)
+            .filterBounds(table)
+            .filterDate('2020-05-02','2024-05-02')
+            .select('F');
+            
+// Criando dataset mensal com a banda da temperatura em Celsius
+var tc = ee.ImageCollection("ECMWF/ERA5_LAND/MONTHLY_AGGR")
+            .map(calcularTempC)
+            .filterBounds(table)
+            .filterDate('2020-05-02','2024-05-02')
+            .select('temp');
+            
+//Criando um dataset de 2020 a 2024 apenas com a banda da temperatura em F para poupar procesamento
+var dataset = tf.select(['F']).aside(print); 
+
+// Tirando a média de 2020 a 2024
+var dataset_media = dataset.reduce(ee.Reducer.mean()).rename('F_media');
+
+//Tirando a média da sua região, nesse caso da table
+var temp_espacializada = dataset_media.reduceRegions({
+    collection:table,
+    reducer:ee.Reducer.mean(),
+  });
+
+//Adicionando a camada no mapa
+
+Map.addLayer(temp_espacializada)
+
+// Exportando em csv para o drive
+Export.table.toDrive({
+  collection: temp_espacializada,
+  description: 'Coloque o nome do arquivo',
+  folder: 'Coloque o nome da sua pasta no drive que você quer que vá',
+  fileFormat: 'CSV'
+});
